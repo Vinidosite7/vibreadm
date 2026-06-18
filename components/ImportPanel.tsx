@@ -144,6 +144,14 @@ export default function ImportPanel({
     setPreviewRows((rows) => (rows ? rows.filter((r) => r.tempId !== tempId) : rows));
   }
 
+  function selectAll() {
+    setPreviewRows((rows) => (rows ? rows.map((r) => ({ ...r, include: true })) : rows));
+  }
+
+  function deselectAll() {
+    setPreviewRows((rows) => (rows ? rows.map((r) => ({ ...r, include: false })) : rows));
+  }
+
   function handleConfirm() {
     if (!previewRows) return;
     const included = previewRows.filter((r) => r.include);
@@ -297,6 +305,22 @@ export default function ImportPanel({
               {skipped > 0 ? ` — ${skipped} linha(s) ignorada(s)` : ""}
               {duplicateCount > 0 ? ` — ${duplicateCount} possível(eis) duplicado(s) já desmarcado(s)` : ""}
             </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAll}
+                className="text-xs text-muted hover:text-foreground border border-border rounded-lg px-2.5 py-1"
+              >
+                Marcar todos
+              </button>
+              <button
+                type="button"
+                onClick={deselectAll}
+                className="text-xs text-muted hover:text-foreground border border-border rounded-lg px-2.5 py-1"
+              >
+                Desmarcar todos
+              </button>
+            </div>
           </div>
 
           <div className="border border-border rounded-xl overflow-hidden">
@@ -377,7 +401,15 @@ export default function ImportPanel({
           {duplicateCount > 0 && (
             <div className="flex items-start gap-2 text-xs text-red bg-red-soft rounded-lg px-3 py-2 mt-3">
               <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-              Linhas em vermelho parecem já existir (mesma data e valor) — vieram desmarcadas, marque a caixinha se quiser importar mesmo assim.
+              <span>
+                Linhas em vermelho parecem já existir (mesma data e valor) — vieram desmarcadas, marque a caixinha (ou use &quot;Marcar todos&quot;) se quiser importar mesmo assim.
+                {duplicateCount === previewRows.length && (
+                  <>
+                    {" "}
+                    Como <strong>todas</strong> vieram como duplicado, esse período provavelmente já está importado — confira na aba de Transações antes de marcar tudo, pra não contar a mesma despesa duas vezes no DRE.
+                  </>
+                )}
+              </span>
             </div>
           )}
 
