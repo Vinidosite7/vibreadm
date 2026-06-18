@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0f14;
+  --surface: #131922;
+  --surface-2: #182030;
+  --border: #232c39;
+  --foreground: #ecf1f5;
+  --muted: #8b96a5;
+  --faint: #5b6573;
+  --green: #34b27b;
+  --green-soft: rgba(52, 178, 123, 0.12);
+  --red: #e5615e;
+  --red-soft: rgba(229, 97, 94, 0.12);
+  --gold: #c9a227;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-gold: var(--gold);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-plex-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes dre-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: dre-spin 0.8s linear infinite;
+}
