@@ -33,7 +33,7 @@ export type ExtractRow = {
   isDuplicate: boolean;
 };
 
-export type ExtractResult = { rows?: ExtractRow[]; skipped?: number; error?: string };
+export type ExtractResult = { rows?: ExtractRow[]; skipped?: number; truncated?: boolean; error?: string };
 
 export async function extractStatement(
   companyId: string,
@@ -53,7 +53,7 @@ export async function extractStatement(
     const text = formData.get("text");
     const allFiles = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
 
-    let result: { rows: { date: string; description: string; amount: number; category: string }[]; skipped: number };
+    let result: { rows: { date: string; description: string; amount: number; category: string }[]; skipped: number; truncated: boolean };
 
     if (allFiles.length > 0) {
       const converted: { base64: string; mediaType: string }[] = [];
@@ -88,7 +88,7 @@ export async function extractStatement(
       isDuplicate: existingKeys.has(`${r.date}|${r.amount.toFixed(2)}`),
     }));
 
-    return { rows, skipped: result.skipped };
+    return { rows, skipped: result.skipped, truncated: result.truncated };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao processar o extrato." };
   }

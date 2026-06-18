@@ -102,7 +102,7 @@ function parseOutput(text: string, customCategories: string[] = []): { rows: Ext
 async function callClaude(
   content: unknown,
   customCategories: string[] = []
-): Promise<{ rows: ExtractedRow[]; skipped: number }> {
+): Promise<{ rows: ExtractedRow[]; skipped: number; truncated: boolean }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -119,7 +119,7 @@ async function callClaude(
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 4000,
+      max_tokens: 8000,
       messages: [{ role: "user", content }],
     }),
   });
@@ -136,7 +136,8 @@ async function callClaude(
     .join("\n");
 
   if (!text.trim()) throw new Error("A IA não retornou nenhum dado. Tente novamente.");
-  return parseOutput(text, customCategories);
+  const { rows, skipped } = parseOutput(text, customCategories);
+  return { rows, skipped, truncated: data.stop_reason === "max_tokens" };
 }
 
 export async function extractFromText(

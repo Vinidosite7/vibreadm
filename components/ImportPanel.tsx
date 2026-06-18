@@ -27,6 +27,7 @@ export default function ImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(0);
+  const [truncated, setTruncated] = useState(false);
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null);
   const [accountValue, setAccountValue] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
@@ -124,6 +125,7 @@ export default function ImportPanel({
         return;
       }
       setSkipped(res.skipped || 0);
+      setTruncated(!!res.truncated);
       setPreviewRows(
         (res.rows || []).map((r, i) => ({
           ...r,
@@ -376,6 +378,13 @@ export default function ImportPanel({
             <div className="flex items-start gap-2 text-xs text-red bg-red-soft rounded-lg px-3 py-2 mt-3">
               <AlertTriangle size={13} className="shrink-0 mt-0.5" />
               Linhas em vermelho parecem já existir (mesma data e valor) — vieram desmarcadas, marque a caixinha se quiser importar mesmo assim.
+            </div>
+          )}
+
+          {truncated && (
+            <div className="flex items-start gap-2 text-xs text-red bg-red-soft rounded-lg px-3 py-2 mt-3">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              A leitura foi muito longa e a IA pode ter parado antes do fim — confira se as últimas transações das suas fotos aparecem aqui. Se faltar algo, importe o restante em uma segunda leva.
             </div>
           )}
 
