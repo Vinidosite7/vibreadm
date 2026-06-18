@@ -1,13 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { extractFromText, extractFromFile } from "@/lib/anthropic";
+import { extractFromText, extractFromFiles } from "@/lib/anthropic";
 import { revalidatePath } from "next/cache";
-
-export type ImportState = {
-  error?: string;
-  success?: string;
-} | null;
 
 async function assertCompanyOwnership(companyId: string) {
   const supabase = await createClient();
@@ -30,12 +25,21 @@ function revalidateCompany(companyId: string) {
   revalidatePath(`/empresas/${companyId}/dashboard`);
 }
 
-export async function importStatement(
+export type ExtractRow = {
+  date: string;
+  description: string;
+  amount: number;
+  category: string;
+  isDuplicate: boolean;
+};
+
+export type ExtractResult = { rows?: ExtractRow[]; skipped?: number; error?: string };
+
+export async function extractStatement(
   companyId: string,
   tipo: "cartao" | "banco",
-  _prevState: ImportState,
   formData: FormData
-): Promise<ImportState> {
+): Promise<ExtractResult> {
   try {
     const supabase = await assertCompanyOwnership(companyId);
 
@@ -47,53 +51,78 @@ export async function importStatement(
 
     const account = String(formData.get("account") || "Conta sem nome").trim() || "Conta sem nome";
     const text = formData.get("text");
-    const file = formData.get("file") as File | null;
+    const allFiles = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
 
     let result: { rows: { date: string; description: string; amount: number; category: string }[]; skipped: number };
 
-    if (file && file.size > 0) {
-      const buf = await file.arrayBuffer();
-      const base64 = Buffer.from(buf).toString("base64");
-      const mediaType = file.type || "application/octet-stream";
-      if (
-        mediaType !== "application/pdf" &&
-        !mediaType.startsWith("image/")
-      ) {
-        return { error: "Envie PDF ou imagem (PNG/JPG/WEBP). Para CSV/Excel, abra o arquivo e cole o conteúdo como texto." };
+    if (allFiles.length > 0) {
+      const converted: { base64: string; mediaType: string }[] = [];
+      for (const file of allFiles) {
+        const mediaType = file.type || "application/octet-stream";
+        if (mediaType !== "application/pdf" && !mediaType.startsWith("image/")) {
+          return { error: `"${file.name}" não é PDF nem imagem (PNG/JPG/WEBP). Para CSV/Excel, cole o conteúdo como texto.` };
+        }
+        const buf = await file.arrayBuffer();
+        converted.push({ base64: Buffer.from(buf).toString("base64"), mediaType });
       }
-      result = await extractFromFile(base64, mediaType, account, tipo, customCategories);
+      result = await extractFromFiles(converted, account, tipo, customCategories);
     } else if (text && String(text).trim()) {
       result = await extractFromText(String(text), account, tipo, customCategories);
     } else {
-      return { error: "Cole o texto do extrato ou envie um arquivo." };
+      return { error: "Cole o texto do extrato ou envie um ou mais arquivos." };
     }
 
     if (result.rows.length === 0) {
       return { error: "Não consegui identificar transações nesse extrato. Tente colar o texto puro." };
     }
 
-    const rowsToInsert = result.rows.map((r) => ({
+    const { data: existing } = await supabase
+      .from("transactions")
+      .select("date, amount")
+      .eq("company_id", companyId)
+      .eq("tipo", tipo);
+    const existingKeys = new Set((existing || []).map((e) => `${e.date}|${Number(e.amount).toFixed(2)}`));
+
+    const rows: ExtractRow[] = result.rows.map((r) => ({
+      ...r,
+      isDuplicate: existingKeys.has(`${r.date}|${r.amount.toFixed(2)}`),
+    }));
+
+    return { rows, skipped: result.skipped };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Erro ao processar o extrato." };
+  }
+}
+
+export type ConfirmImportResult = { success?: string; error?: string };
+
+export async function confirmImport(
+  companyId: string,
+  tipo: "cartao" | "banco",
+  account: string,
+  rows: { date: string; description: string; amount: number; category: string }[]
+): Promise<ConfirmImportResult> {
+  try {
+    if (!rows || rows.length === 0) return { error: "Nenhuma transação selecionada." };
+    const supabase = await assertCompanyOwnership(companyId);
+
+    const rowsToInsert = rows.map((r) => ({
       company_id: companyId,
       date: r.date,
-      description: r.description,
+      description: String(r.description || "").slice(0, 60),
       amount: r.amount,
       category: r.category,
-      account,
+      account: account || "Conta sem nome",
       tipo,
     }));
 
-    const { error: insertError } = await supabase.from("transactions").insert(rowsToInsert);
-    if (insertError) return { error: "Erro ao salvar transações: " + insertError.message };
+    const { error } = await supabase.from("transactions").insert(rowsToInsert);
+    if (error) return { error: "Erro ao salvar: " + error.message };
 
     revalidateCompany(companyId);
-
-    return {
-      success: `${result.rows.length} transações importadas${
-        result.skipped ? ` — ${result.skipped} linha(s) ignorada(s)` : ""
-      }.`,
-    };
+    return { success: `${rows.length} transação(ões) importada(s).` };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Erro ao processar o extrato." };
+    return { error: e instanceof Error ? e.message : "Erro ao confirmar importação." };
   }
 }
 

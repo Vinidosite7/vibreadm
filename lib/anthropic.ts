@@ -150,20 +150,28 @@ export async function extractFromText(
   return callClaude(prompt, customCategories);
 }
 
-export async function extractFromFile(
-  base64: string,
-  mediaType: string,
+export async function extractFromFiles(
+  files: { base64: string; mediaType: string }[],
   accountLabel: string,
   tipo: "cartao" | "banco",
   customCategories: string[] = []
 ) {
   const yearHint = new Date().getFullYear();
-  const promptText = buildPrompt(accountLabel, yearHint, tipo, customCategories) + "(arquivo em anexo)";
-  const fileBlock =
-    mediaType === "application/pdf"
-      ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
-      : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
-  return callClaude([fileBlock, { type: "text", text: promptText }], customCategories);
+  const countHint =
+    files.length > 1
+      ? ` As ${files.length} fotos/arquivos a seguir são PARTES DO MESMO extrato — trate como um único documento contínuo (ex: várias fotos de páginas diferentes da mesma fatura). Não repita uma transação que apareça em mais de uma foto por sobreposição.`
+      : "";
+  const promptText =
+    buildPrompt(accountLabel, yearHint, tipo, customCategories) +
+    `(${files.length} arquivo(s) em anexo).${countHint}`;
+
+  const fileBlocks = files.map((f) =>
+    f.mediaType === "application/pdf"
+      ? { type: "document", source: { type: "base64", media_type: f.mediaType, data: f.base64 } }
+      : { type: "image", source: { type: "base64", media_type: f.mediaType, data: f.base64 } }
+  );
+
+  return callClaude([...fileBlocks, { type: "text", text: promptText }], customCategories);
 }
 
 const ANALYST_PERSONA = `Você é um analista financeiro/CFO brasileiro fodão — entende muito de número, de DRE e de negócio digital (tráfego pago, gateway, taxa, imposto, margem), mas fala igual gente normal, sem economês forçado e sem ser robótico.
