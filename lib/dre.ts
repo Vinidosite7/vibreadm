@@ -8,7 +8,8 @@ export type Category =
   | "Despesas Bancarias"
   | "Impostos"
   | "Outras Despesas"
-  | "Transferencia Interna";
+  | "Transferencia Interna"
+  | "Nao Identificado";
 
 export type SourceType = "cartao" | "banco";
 
@@ -18,7 +19,7 @@ export type Transaction = {
   date: string; // YYYY-MM-DD
   description: string;
   amount: number;
-  category: Category;
+  category: string; // categoria fixa (Category) ou nome de categoria customizada da empresa
   account: string;
   tipo: SourceType;
   created_at?: string;
@@ -35,7 +36,14 @@ export const CATEGORIES: { key: Category; label: string }[] = [
   { key: "Impostos", label: "Impostos" },
   { key: "Outras Despesas", label: "Outras Despesas" },
   { key: "Transferencia Interna", label: "Transferência Interna" },
+  { key: "Nao Identificado", label: "Não Identificado" },
 ];
+
+// Categorias que têm linha própria no cálculo do DRE. Qualquer categoria
+// customizada criada pela empresa (fora dessa lista) entra automaticamente
+// no balaio de "Outras Despesas" para fins de cálculo, mas mantém o nome
+// próprio nos gráficos de detalhamento (expenseBreakdown).
+export const KNOWN_BUCKETS = new Set<string>(CATEGORIES.map((c) => c.key));
 
 export const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.key, c.label])
@@ -50,6 +58,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   "Despesas Bancarias": "#5FB3C9",
   Impostos: "#B3654F",
   "Outras Despesas": "#5B6573",
+  "Nao Identificado": "#E5615E",
 };
 
 export const MONTH_NAMES = [
@@ -95,6 +104,7 @@ export type DREResult = {
   despesasFinanceiras: number;
   impostos: number;
   proLabore: number;
+  naoIdentificado: number;
   resultadoLiquido: number;
   internalTotal: number;
   internalCount: number;
@@ -111,7 +121,10 @@ export function computeDRE(rows: Transaction[]): DREResult {
       internalCount++;
       return;
     }
-    sums[t.category] = (sums[t.category] || 0) + t.amount;
+    // Categorias customizadas (criadas pela empresa) não têm linha própria
+    // no DRE — entram no balaio de "Outras Despesas" pra não sumir do cálculo.
+    const bucket = KNOWN_BUCKETS.has(t.category) ? t.category : "Outras Despesas";
+    sums[bucket] = (sums[bucket] || 0) + t.amount;
   });
 
   const receita = sums["Receita"] || 0;
@@ -130,8 +143,9 @@ export function computeDRE(rows: Transaction[]): DREResult {
   const despesasFinanceiras = Math.abs(sums["Despesas Bancarias"] || 0);
   const impostos = Math.abs(sums["Impostos"] || 0);
   const proLabore = Math.abs(sums["Pro Labore"] || 0);
+  const naoIdentificado = Math.abs(sums["Nao Identificado"] || 0);
   const resultadoLiquido =
-    resultadoOperacional - despesasFinanceiras - impostos - proLabore;
+    resultadoOperacional - despesasFinanceiras - impostos - proLabore - naoIdentificado;
 
   return {
     receita,
@@ -143,6 +157,7 @@ export function computeDRE(rows: Transaction[]): DREResult {
     despesasFinanceiras,
     impostos,
     proLabore,
+    naoIdentificado,
     resultadoLiquido,
     internalTotal,
     internalCount,

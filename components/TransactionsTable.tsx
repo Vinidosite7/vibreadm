@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateTransactionCategory,
@@ -8,8 +8,9 @@ import {
   addManualTransaction,
   type ManualState,
 } from "@/app/actions/transactions";
+import { createCategory, type CategoryState } from "@/app/actions/categories";
 import { CATEGORIES, fmtBRL, formatDate, type Transaction } from "@/lib/dre";
-import { Trash2, Plus, Loader2 } from "lucide-react";
+import { Trash2, Plus, Loader2, AlertTriangle, Tag } from "lucide-react";
 import BulkDeletePanel from "@/components/BulkDeletePanel";
 
 export default function TransactionsTable({
@@ -17,21 +18,46 @@ export default function TransactionsTable({
   tipo,
   transactions,
   accounts,
+  customCategories,
 }: {
   companyId: string;
   tipo: "cartao" | "banco";
   transactions: Transaction[];
   accounts: string[];
+  customCategories: string[];
 }) {
   const router = useRouter();
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
+  const [catOpen, setCatOpen] = useState(false);
   const months = Array.from(new Set(transactions.map((t) => t.date.slice(0, 7)))).sort();
+
+  const allCategoryOptions = [
+    ...CATEGORIES.map((c) => ({ key: c.key, label: c.label })),
+    ...customCategories.map((name) => ({ key: name, label: name })),
+  ];
 
   const boundAdd = addManualTransaction.bind(null, companyId, tipo);
   const [addState, addFormAction, addPending] = useActionState<ManualState, FormData>(boundAdd, null);
   const addFormRef = useRef<HTMLFormElement>(null);
+
+  const boundCreateCategory = createCategory.bind(null, companyId);
+  const [catState, catFormAction, catPending] = useActionState<CategoryState, FormData>(
+    boundCreateCategory,
+    null
+  );
+  const catFormRef = useRef<HTMLFormElement>(null);
+  const catWasPending = useRef(false);
+
+  useEffect(() => {
+    if (catWasPending.current && !catPending && !catState?.error) {
+      catFormRef.current?.reset();
+      setCatOpen(false);
+      router.refresh();
+    }
+    catWasPending.current = catPending;
+  }, [catPending, catState, router]);
 
   function markPending(id: string, on: boolean) {
     setPendingIds((prev) => {
@@ -61,12 +87,20 @@ export default function TransactionsTable({
     }
   }
 
+  const naoIdentificadoCount = transactions.filter((t) => t.category === "Nao Identificado").length;
+
   return (
     <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between p-5 pb-3">
+      <div className="flex items-center justify-between p-5 pb-3 flex-wrap gap-2">
         <h2 className="text-sm font-bold">Transações ({transactions.length})</h2>
         <div className="flex items-center gap-2">
           <BulkDeletePanel companyId={companyId} tipo={tipo} months={months} />
+          <button
+            onClick={() => setCatOpen((o) => !o)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-foreground border border-border rounded-lg px-3 py-1.5"
+          >
+            <Tag size={13} /> Categoria
+          </button>
           <button
             onClick={() => setAddOpen((o) => !o)}
             className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-foreground border border-border rounded-lg px-3 py-1.5"
@@ -75,6 +109,34 @@ export default function TransactionsTable({
           </button>
         </div>
       </div>
+
+      {naoIdentificadoCount > 0 && (
+        <div className="mx-5 mb-3 flex items-center gap-2 text-xs text-red bg-red-soft rounded-lg px-3 py-2">
+          <AlertTriangle size={13} />
+          {naoIdentificadoCount} transação(ões) sem categoria definida — revise abaixo.
+        </div>
+      )}
+
+      {catOpen && (
+        <form ref={catFormRef} action={catFormAction} className="flex gap-2 px-5 pb-4 items-start">
+          <input
+            name="name"
+            placeholder="Nome da categoria (ex: Hospedagem)"
+            required
+            maxLength={40}
+            className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-xs outline-none focus:border-gold"
+          />
+          <button
+            type="submit"
+            disabled={catPending}
+            className="bg-gold text-[#1a1305] font-bold text-xs rounded-lg px-4 py-2 flex items-center gap-2 disabled:opacity-60"
+          >
+            {catPending && <Loader2 size={13} className="spin" />}
+            Criar
+          </button>
+        </form>
+      )}
+      {catState?.error && <p className="px-5 -mt-2 mb-3 text-xs text-red">{catState.error}</p>}
 
       {addOpen && (
         <form
@@ -105,7 +167,7 @@ export default function TransactionsTable({
             defaultValue="Outras Despesas"
             className="bg-background border border-border rounded-lg px-2 py-1.5 text-xs outline-none focus:border-gold"
           >
-            {CATEGORIES.map((c) => (
+            {allCategoryOptions.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.label}
               </option>
@@ -149,27 +211,38 @@ export default function TransactionsTable({
           <tbody>
             {transactions.map((t) => {
               const isPending = pendingIds.has(t.id);
+              const naoIdentificado = t.category === "Nao Identificado";
               return (
-                <tr key={t.id} className={`border-b border-border ${isPending ? "opacity-40" : ""}`}>
+                <tr
+                  key={t.id}
+                  className={`border-b border-border ${isPending ? "opacity-40" : ""} ${
+                    naoIdentificado ? "bg-red-soft" : ""
+                  }`}
+                >
                   <td className="px-5 py-2 whitespace-nowrap text-muted">{formatDate(t.date)}</td>
                   <td className="px-2 py-2 max-w-[220px] truncate" title={t.description}>
                     {t.description}
                   </td>
                   <td className="px-2 py-2 text-muted whitespace-nowrap">{t.account}</td>
                   <td className="px-2 py-2">
-                    <select
-                      key={t.id + t.category}
-                      defaultValue={t.category}
-                      disabled={isPending}
-                      onChange={(e) => handleCategoryChange(t.id, e.target.value)}
-                      className="bg-background border border-border rounded-md px-2 py-1 text-xs outline-none focus:border-gold"
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c.key} value={c.key}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      {naoIdentificado && <AlertTriangle size={13} className="text-red shrink-0" />}
+                      <select
+                        key={t.id + t.category}
+                        defaultValue={t.category}
+                        disabled={isPending}
+                        onChange={(e) => handleCategoryChange(t.id, e.target.value)}
+                        className={`bg-background border rounded-md px-2 py-1 text-xs outline-none focus:border-gold ${
+                          naoIdentificado ? "border-red text-red" : "border-border"
+                        }`}
+                      >
+                        {allCategoryOptions.map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                   <td
                     className={`px-2 py-2 text-right font-mono whitespace-nowrap ${

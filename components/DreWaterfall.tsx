@@ -70,12 +70,20 @@ export default function DreWaterfall({ dre, periodLabel }: { dre: DREResult; per
       <Row label="(–) Despesas Financeiras" value={-dre.despesasFinanceiras} pct={pct(dre.despesasFinanceiras)} />
       <Row label="(–) Impostos" value={-dre.impostos} pct={pct(dre.impostos)} />
       <Row label="(–) Pró-labore" value={-dre.proLabore} pct={pct(dre.proLabore)} />
+      {dre.naoIdentificado > 0 && (
+        <Row label="(–) Não Identificado" value={-dre.naoIdentificado} pct={pct(dre.naoIdentificado)} />
+      )}
       <Row
         label="= Resultado Líquido"
         value={dre.resultadoLiquido}
         variant="final"
         positiveTone={dre.resultadoLiquido >= 0}
       />
+      {dre.naoIdentificado > 0 && (
+        <p className="text-xs text-red mt-2">
+          Tem {fmtBRL(dre.naoIdentificado)} em transações sem categoria definida — revise na aba de transações pra esse número ficar certo.
+        </p>
+      )}
       {dre.internalCount > 0 && (
         <div className="flex items-center gap-1.5 text-xs text-faint mt-3">
           <ArrowLeftRight size={12} />

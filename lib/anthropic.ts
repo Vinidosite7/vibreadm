@@ -18,13 +18,31 @@ const VALID_CATEGORIES = [
   "Impostos",
   "Transferencia Interna",
   "Outras Despesas",
+  "Nao Identificado",
 ];
 
-function buildPrompt(accountLabel: string, yearHint: number, tipo: "cartao" | "banco") {
+function buildPrompt(
+  accountLabel: string,
+  yearHint: number,
+  tipo: "cartao" | "banco",
+  customCategories: string[] = []
+) {
+  const regraCartaoReceita =
+    tipo === "cartao"
+      ? `- Esse é um extrato de CARTÃO: qualquer valor POSITIVO aqui (pagamento da fatura recebido, crédito, estorno) NÃO é Receita — é só o pagamento da própria fatura, que já sai como despesa no extrato bancário. Categorize esses valores positivos como Transferencia Interna, nunca como Receita.`
+      : "";
   const regraDuplicidade =
     tipo === "banco"
       ? `- ATENÇÃO: se uma transação for o pagamento da fatura de um cartão de crédito (ex: "PGTO CARTAO", "PAGAMENTO FATURA", valor de fechamento de fatura), categorize como Transferencia Interna — o detalhamento dessas compras já é importado separadamente pelo extrato do cartão, então classificá-la como despesa aqui contaria a mesma coisa duas vezes.`
       : `- Este é um extrato de CARTÃO DE CRÉDITO/DÉBITO: categorize cada compra normalmente pela categoria real (Trafego Pago, Software Ferramentas, etc). NÃO existe "pagamento de fatura" aqui — isso fica no extrato bancário.`;
+
+  const todasCategorias = [...VALID_CATEGORIES, ...customCategories];
+  const categoriasCustomTexto =
+    customCategories.length > 0
+      ? `\n- Essa empresa também tem categorias próprias criadas por ela: ${customCategories.join(
+          ", "
+        )}. Se uma transação combinar claramente com uma dessas, use ela em vez de "Outras Despesas".`
+      : "";
 
   return `Você é um motor de extração de dados financeiros para um sistema de DRE empresarial brasileiro.
 Extraia TODAS as transações reais do extrato/fatura abaixo (conta: "${accountLabel}", tipo: ${
@@ -37,14 +55,16 @@ Regras:
 - DATA no formato AAAA-MM-DD. Se o extrato não trouxer o ano, use ${yearHint}.
 - DESCRICAO: até 40 caracteres, nunca use o caractere "|".
 - VALOR: número com ponto decimal (ex: -450.00 ou 1200.50). Negativo = saída/débito. Positivo = entrada/crédito.
-- CATEGORIA: escolha exatamente uma destas: ${VALID_CATEGORIES.join(", ")}.
+- CATEGORIA: escolha exatamente uma destas: ${todasCategorias.join(", ")}.
 - ByteDance, TikTok Ads, Meta Ads, Facebook Ads = Trafego Pago.
 - Gateways de pagamento/checkout (Safe2Pay, GGMAX, PartnerBank, UTMify, WiinPay, Credinex e similares) cobrando taxa = Taxas Gateway.
 - DAS, Simples Nacional, INSS, GPS = Impostos.
 - Juros, IOF, multa, anuidade, manutenção de conta = Despesas Bancarias.
 - PIX recorrente para a mesma pessoa física ligada aos sócios, ou entre contas da própria empresa = Transferencia Interna.
 - Recebimentos de clientes, vendas, repasses de gateway de venda = Receita.
-${regraDuplicidade}
+${regraCartaoReceita}
+${regraDuplicidade}${categoriasCustomTexto}
+- Se a transação for ambígua e você não tiver confiança real em nenhuma categoria, use Nao Identificado em vez de forçar uma categoria errada ou chutar "Outras Despesas". É melhor marcar como Nao Identificado do que categorizar errado.
 - Ignore linhas que não são transações reais (saldo anterior, saldo do dia, cabeçalho, total).
 - Seja extremamente direto e conciso para não estourar o limite de saída. Não invente dados que não estão no extrato.
 
@@ -52,13 +72,14 @@ Extrato:
 `;
 }
 
-function parseOutput(text: string): { rows: ExtractedRow[]; skipped: number } {
+function parseOutput(text: string, customCategories: string[] = []): { rows: ExtractedRow[]; skipped: number } {
   const lines = text
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
   const rows: ExtractedRow[] = [];
   let skipped = 0;
+  const allCategories = [...VALID_CATEGORIES, ...customCategories];
   for (const line of lines) {
     const parts = line.split("|");
     if (parts.length !== 4) {
@@ -72,14 +93,16 @@ function parseOutput(text: string): { rows: ExtractedRow[]; skipped: number } {
       continue;
     }
     const category =
-      VALID_CATEGORIES.find((c) => c.toLowerCase() === catRaw.toLowerCase()) ||
-      "Outras Despesas";
+      allCategories.find((c) => c.toLowerCase() === catRaw.toLowerCase()) || "Nao Identificado";
     rows.push({ date, description: desc.slice(0, 60), amount: value, category });
   }
   return { rows, skipped };
 }
 
-async function callClaude(content: unknown): Promise<{ rows: ExtractedRow[]; skipped: number }> {
+async function callClaude(
+  content: unknown,
+  customCategories: string[] = []
+): Promise<{ rows: ExtractedRow[]; skipped: number }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -113,28 +136,34 @@ async function callClaude(content: unknown): Promise<{ rows: ExtractedRow[]; ski
     .join("\n");
 
   if (!text.trim()) throw new Error("A IA não retornou nenhum dado. Tente novamente.");
-  return parseOutput(text);
+  return parseOutput(text, customCategories);
 }
 
-export async function extractFromText(rawText: string, accountLabel: string, tipo: "cartao" | "banco") {
+export async function extractFromText(
+  rawText: string,
+  accountLabel: string,
+  tipo: "cartao" | "banco",
+  customCategories: string[] = []
+) {
   const yearHint = new Date().getFullYear();
-  const prompt = buildPrompt(accountLabel, yearHint, tipo) + rawText;
-  return callClaude(prompt);
+  const prompt = buildPrompt(accountLabel, yearHint, tipo, customCategories) + rawText;
+  return callClaude(prompt, customCategories);
 }
 
 export async function extractFromFile(
   base64: string,
   mediaType: string,
   accountLabel: string,
-  tipo: "cartao" | "banco"
+  tipo: "cartao" | "banco",
+  customCategories: string[] = []
 ) {
   const yearHint = new Date().getFullYear();
-  const promptText = buildPrompt(accountLabel, yearHint, tipo) + "(arquivo em anexo)";
+  const promptText = buildPrompt(accountLabel, yearHint, tipo, customCategories) + "(arquivo em anexo)";
   const fileBlock =
     mediaType === "application/pdf"
       ? { type: "document", source: { type: "base64", media_type: mediaType, data: base64 } }
       : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
-  return callClaude([fileBlock, { type: "text", text: promptText }]);
+  return callClaude([fileBlock, { type: "text", text: promptText }], customCategories);
 }
 
 const ANALYST_PERSONA = `Você é um analista financeiro/CFO brasileiro fodão — entende muito de número, de DRE e de negócio digital (tráfego pago, gateway, taxa, imposto, margem), mas fala igual gente normal, sem economês forçado e sem ser robótico.

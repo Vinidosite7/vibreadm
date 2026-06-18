@@ -26,6 +26,13 @@ export default async function SourceTransactionsView({
 
   if (error) notFound();
 
+  const { data: catData } = await supabase
+    .from("categories")
+    .select("name")
+    .eq("company_id", companyId)
+    .order("name", { ascending: true });
+  const customCategories = (catData || []).map((c) => c.name as string);
+
   const transactions = (data || []) as Transaction[];
   const accounts = Array.from(new Set(transactions.map((t) => t.account))).sort();
 
@@ -36,7 +43,13 @@ export default async function SourceTransactionsView({
         <p className="text-sm text-muted mt-1">{helpText}</p>
       </div>
       <ImportPanel companyId={companyId} tipo={tipo} accounts={accounts} />
-      <TransactionsTable companyId={companyId} tipo={tipo} transactions={transactions} accounts={accounts} />
+      <TransactionsTable
+        companyId={companyId}
+        tipo={tipo}
+        transactions={transactions}
+        accounts={accounts}
+        customCategories={customCategories}
+      />
     </div>
   );
 }

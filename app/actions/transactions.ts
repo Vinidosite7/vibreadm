@@ -39,6 +39,12 @@ export async function importStatement(
   try {
     const supabase = await assertCompanyOwnership(companyId);
 
+    const { data: customCats } = await supabase
+      .from("categories")
+      .select("name")
+      .eq("company_id", companyId);
+    const customCategories = (customCats || []).map((c) => c.name as string);
+
     const account = String(formData.get("account") || "Conta sem nome").trim() || "Conta sem nome";
     const text = formData.get("text");
     const file = formData.get("file") as File | null;
@@ -55,9 +61,9 @@ export async function importStatement(
       ) {
         return { error: "Envie PDF ou imagem (PNG/JPG/WEBP). Para CSV/Excel, abra o arquivo e cole o conteúdo como texto." };
       }
-      result = await extractFromFile(base64, mediaType, account, tipo);
+      result = await extractFromFile(base64, mediaType, account, tipo, customCategories);
     } else if (text && String(text).trim()) {
-      result = await extractFromText(String(text), account, tipo);
+      result = await extractFromText(String(text), account, tipo, customCategories);
     } else {
       return { error: "Cole o texto do extrato ou envie um arquivo." };
     }
