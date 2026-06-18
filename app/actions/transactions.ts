@@ -119,6 +119,48 @@ export async function deleteTransactionAction(companyId: string, transactionId: 
 
 export type ManualState = { error?: string } | null;
 
+export type BulkDeleteState = { error?: string; success?: string } | null;
+
+export async function bulkDeleteTransactions(
+  companyId: string,
+  tipo: "cartao" | "banco",
+  mode: "all" | "month" | "last7days",
+  month?: string
+): Promise<BulkDeleteState> {
+  try {
+    const supabase = await assertCompanyOwnership(companyId);
+
+    let query = supabase
+      .from("transactions")
+      .delete({ count: "exact" })
+      .eq("company_id", companyId)
+      .eq("tipo", tipo);
+
+    if (mode === "month") {
+      if (!month || !/^\d{4}-\d{2}$/.test(month)) return { error: "Selecione um mês válido." };
+      const [y, m] = month.split("-").map(Number);
+      const start = `${month}-01`;
+      const nextDate = new Date(y, m, 1);
+      const end = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}-01`;
+      query = query.gte("date", start).lt("date", end);
+    } else if (mode === "last7days") {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      const cutoff = d.toISOString().slice(0, 10);
+      query = query.gte("date", cutoff);
+    }
+    // mode === "all": sem filtro extra, apaga tudo desse tipo nessa empresa.
+
+    const { error, count } = await query;
+    if (error) return { error: error.message };
+
+    revalidateCompany(companyId);
+    return { success: `${count ?? 0} transação(ões) apagada(s).` };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Erro ao apagar transações." };
+  }
+}
+
 export async function addManualTransaction(
   companyId: string,
   tipo: "cartao" | "banco",

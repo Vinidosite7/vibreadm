@@ -10,6 +10,7 @@ import {
 } from "@/app/actions/transactions";
 import { CATEGORIES, fmtBRL, formatDate, type Transaction } from "@/lib/dre";
 import { Trash2, Plus, Loader2 } from "lucide-react";
+import BulkDeletePanel from "@/components/BulkDeletePanel";
 
 export default function TransactionsTable({
   companyId,
@@ -26,6 +27,7 @@ export default function TransactionsTable({
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
   const [addOpen, setAddOpen] = useState(false);
+  const months = Array.from(new Set(transactions.map((t) => t.date.slice(0, 7)))).sort();
 
   const boundAdd = addManualTransaction.bind(null, companyId, tipo);
   const [addState, addFormAction, addPending] = useActionState<ManualState, FormData>(boundAdd, null);
@@ -63,12 +65,15 @@ export default function TransactionsTable({
     <div className="bg-surface border border-border rounded-2xl overflow-hidden">
       <div className="flex items-center justify-between p-5 pb-3">
         <h2 className="text-sm font-bold">Transações ({transactions.length})</h2>
-        <button
-          onClick={() => setAddOpen((o) => !o)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-foreground border border-border rounded-lg px-3 py-1.5"
-        >
-          <Plus size={13} /> Adicionar
-        </button>
+        <div className="flex items-center gap-2">
+          <BulkDeletePanel companyId={companyId} tipo={tipo} months={months} />
+          <button
+            onClick={() => setAddOpen((o) => !o)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-foreground border border-border rounded-lg px-3 py-1.5"
+          >
+            <Plus size={13} /> Adicionar
+          </button>
+        </div>
       </div>
 
       {addOpen && (
