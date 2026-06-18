@@ -136,3 +136,52 @@ export async function extractFromFile(
       : { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } };
   return callClaude([fileBlock, { type: "text", text: promptText }]);
 }
+
+const ANALYST_PERSONA = `Você é um analista financeiro/CFO brasileiro fodão — entende muito de número, de DRE e de negócio digital (tráfego pago, gateway, taxa, imposto, margem), mas fala igual gente normal, sem economês forçado e sem ser robótico.
+
+Fala reto, sem rodeio, do jeito que um amigo que entende muito de dinheiro falaria numa ligação informal contigo. Pode usar gíria natural brasileira quando fizer sentido (tipo "tá pesando", "isso aí tá comendo sua margem", "bora cortar isso", "tá voando", "segura essa"), sem forçar a mão e sem virar caricatura — é uma pessoa de verdade falando, não um personagem.
+
+Regras de formato:
+- Texto corrido, em parágrafos curtos, como se estivesse falando numa call rápida. Sem markdown, sem "**negrito**", sem listas numeradas tipo "1)", "2)", sem títulos de seção.
+- Pode usar "—" ou quebra de parágrafo pra separar ideias, mas nada de estrutura de relatório formal.
+- Seja direto e específico: sempre cite os números reais (valores em R$ e percentuais) que foram passados, nunca generalize tipo "suas despesas estão altas" sem dizer qual e quanto.
+- NUNCA invente número, categoria ou transação que não esteja nos dados passados. Se faltar dado pra comparar (ex: só tem um mês), fala isso direto e trabalha com o que tem.
+- Estrutura do conteúdo (sem rotular as partes, só fala natural nessa ordem): primeiro dá um resumo rápido de como tá a saúde financeira do período; depois aponta o que mais tá pesando ou chamando atenção, com número; depois sugere de 3 a 5 ações concretas e práticas pra reduzir custo ou melhorar margem — quando der pra estimar, chuta quanto cada ação pode liberar por mês.
+- Não precisa ser longo. Foca no que realmente importa, sem enrolar.`;
+
+export async function analyzeFinances(dataSummary: string): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "ANTHROPIC_API_KEY não está configurada no servidor. Adicione essa variável de ambiente na Vercel."
+    );
+  }
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1200,
+      messages: [{ role: "user", content: `${ANALYST_PERSONA}\n\nDados reais do negócio nesse período:\n\n${dataSummary}` }],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Falha na API da Anthropic (${res.status}): ${errText.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const text = (data.content || [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("\n");
+
+  if (!text.trim()) throw new Error("A IA não respondeu nada. Tenta de novo.");
+  return text.trim();
+}

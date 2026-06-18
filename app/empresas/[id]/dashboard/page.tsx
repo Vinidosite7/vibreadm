@@ -10,6 +10,7 @@ import {
 } from "@/lib/dre";
 import FilterBar from "@/components/FilterBar";
 import DreWaterfall from "@/components/DreWaterfall";
+import AiAnalysisPanel from "@/components/AiAnalysisPanel";
 import { ExpensePieChart, MonthlyBarChart, ResultTrendChart } from "@/components/DreCharts";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +76,8 @@ export default async function CompanyDashboardPage({
       </Suspense>
 
       <DreWaterfall dre={dre} periodLabel={periodLabel} />
+
+      <AiAnalysisPanel companyId={id} />
 
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-surface border border-border rounded-2xl p-5">
