@@ -42,7 +42,7 @@ export default async function SourceTransactionsView({
         <h1 className="text-xl font-extrabold">{title}</h1>
         <p className="text-sm text-muted mt-1">{helpText}</p>
       </div>
-      <ImportPanel companyId={companyId} tipo={tipo} accounts={accounts} />
+      <ImportPanel companyId={companyId} tipo={tipo} accounts={accounts} customCategories={customCategories} />
       <TransactionsTable
         companyId={companyId}
         tipo={tipo}
