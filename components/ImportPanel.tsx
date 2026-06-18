@@ -22,6 +22,7 @@ export default function ImportPanel({
   const router = useRouter();
   const [open, setOpen] = useState(accounts.length === 0);
   const [files, setFiles] = useState<File[]>([]);
+  const [compressing, setCompressing] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -38,10 +39,68 @@ export default function ImportPanel({
 
   const totalSizeMB = files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024);
 
-  function handleFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+  // Redimensiona e recomprime a foto no navegador antes de enviar. A IA de
+  // visão já reduz a imagem internamente pra ~2000px no lado maior, então
+  // mandar a foto em resolução total da câmera só desperdiça banda — isso
+  // que permite enviar várias fotos juntas sem estourar limite de tamanho.
+  function compressImage(file: File, maxDim = 2000, quality = 0.82): Promise<File> {
+    if (!file.type.startsWith("image/")) return Promise.resolve(file); // PDF passa direto
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob || blob.size >= file.size) {
+              resolve(file);
+              return;
+            }
+            const newName = file.name.replace(/\.\w+$/, "") + ".jpg";
+            resolve(new File([blob], newName, { type: "image/jpeg" }));
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    });
+  }
+
+  async function handleFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files || []);
-    if (picked.length > 0) setFiles((prev) => [...prev, ...picked]);
     e.target.value = "";
+    if (picked.length === 0) return;
+    setCompressing(true);
+    try {
+      const processed = await Promise.all(picked.map((f) => compressImage(f)));
+      setFiles((prev) => [...prev, ...processed]);
+    } finally {
+      setCompressing(false);
+    }
   }
 
   function removeFile(idx: number) {
@@ -146,7 +205,7 @@ export default function ImportPanel({
             </datalist>
 
             <div className="h-3" />
-            <label className="block text-xs font-semibold text-muted mb-1.5">Fotos ou PDF (pode enviar várias de uma vez)</label>
+            <label className="block text-xs font-semibold text-muted mb-1.5">Fotos ou PDF (pode enviar várias de uma vez — até 10-12 fotos numa importação)</label>
             <label className="flex items-center justify-center text-center text-sm text-muted border border-dashed border-border rounded-lg px-4 py-5 cursor-pointer hover:border-gold hover:text-foreground transition-colors">
               <input
                 ref={fileInputRef}
@@ -154,10 +213,19 @@ export default function ImportPanel({
                 name="file"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
                 multiple
+                disabled={compressing}
                 className="hidden"
                 onChange={handleFilesPicked}
               />
-              {files.length > 0 ? "Adicionar mais fotos" : "Clique para enviar fotos ou um PDF"}
+              {compressing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 size={14} className="spin" /> Otimizando fotos...
+                </span>
+              ) : files.length > 0 ? (
+                "Adicionar mais fotos"
+              ) : (
+                "Clique para enviar fotos ou um PDF"
+              )}
             </label>
 
             {files.length > 0 && (
@@ -176,9 +244,9 @@ export default function ImportPanel({
                     </div>
                   </div>
                 ))}
-                <p className={`text-xs mt-0.5 ${totalSizeMB > 18 ? "text-red" : "text-faint"}`}>
-                  Total: {totalSizeMB.toFixed(1)}MB
-                  {totalSizeMB > 18 ? " — passou do limite, remova alguma foto ou importe em duas partes." : ""}
+                <p className={`text-xs mt-0.5 ${totalSizeMB > 20 ? "text-red" : "text-faint"}`}>
+                  {files.length} foto(s) — {totalSizeMB.toFixed(1)}MB no total (já compactadas automaticamente)
+                  {totalSizeMB > 20 ? " — passou do limite, remova alguma foto ou importe em duas partes." : ""}
                 </p>
               </div>
             )}
@@ -194,7 +262,7 @@ export default function ImportPanel({
             />
             <button
               type="submit"
-              disabled={pending}
+              disabled={pending || compressing}
               className="mt-2 bg-gold text-[#1a1305] font-bold text-sm rounded-lg py-2 px-4 flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {pending ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
