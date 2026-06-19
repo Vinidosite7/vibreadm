@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { unstable_noStore as noStore } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import {
@@ -20,6 +21,7 @@ export default async function CompanyDashboardPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ month?: string; account?: string; tipo?: string }>;
 }) {
+  noStore();
   const { id } = await params;
   const sp = await searchParams;
   const supabase = await createClient();

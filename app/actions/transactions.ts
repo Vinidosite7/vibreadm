@@ -14,9 +14,7 @@ async function assertCompanyOwnership(companyId: string) {
 }
 
 function revalidateCompany(companyId: string) {
-  revalidatePath(`/empresas/${companyId}/cartao`);
-  revalidatePath(`/empresas/${companyId}/banco`);
-  revalidatePath(`/empresas/${companyId}/dashboard`);
+  revalidatePath(`/empresas/${companyId}`, "layout");
 }
 
 export type ExtractRow = { date: string; description: string; amount: number; category: string; isDuplicate: boolean };
@@ -103,12 +101,8 @@ export async function addManualTransaction(companyId: string, tipo: "cartao" | "
 
 export type BulkDeleteState = { error?: string; success?: string } | null;
 export async function bulkDeleteTransactions(
-  companyId: string,
-  tipo: "cartao" | "banco",
-  mode: "all" | "month" | "last7days",
-  month?: string,
-  account?: string,
-  direction?: "entrada" | "saida"
+  companyId: string, tipo: "cartao" | "banco", mode: "all" | "month" | "last7days",
+  month?: string, account?: string, direction?: "entrada" | "saida"
 ): Promise<BulkDeleteState> {
   try {
     const supabase = await assertCompanyOwnership(companyId);
