@@ -2,12 +2,9 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import {
-  computeDRE,
-  monthlySeries,
-  expenseBreakdown,
-  monthLabel,
-  type Transaction,
+  computeDRE, monthlySeries, expenseBreakdown, monthLabel, type Transaction,
 } from "@/lib/dre";
+import { getCompanySettings } from "@/app/actions/settings";
 import FilterBar from "@/components/FilterBar";
 import DreWaterfall from "@/components/DreWaterfall";
 import AiAnalysisPanel from "@/components/AiAnalysisPanel";
@@ -27,11 +24,10 @@ export default async function CompanyDashboardPage({
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("company_id", id)
-    .order("date", { ascending: true });
+  const [{ data, error }, settings] = await Promise.all([
+    supabase.from("transactions").select("*").eq("company_id", id).order("date", { ascending: true }),
+    getCompanySettings(id),
+  ]);
 
   if (error) notFound();
 
@@ -46,9 +42,19 @@ export default async function CompanyDashboardPage({
     return true;
   });
 
-  const dre = computeDRE(filtered);
-  const monthly = monthlySeries(filtered);
-  const expenses = expenseBreakdown(filtered);
+  const dreFiltered = filtered.filter((t) => {
+    if (t.tipo === "cartao" && !settings.include_cartao) return false;
+    if (t.tipo === "banco" && !settings.include_banco) return false;
+    return true;
+  });
+
+  const cartaoFiltered = filtered.filter((t) => t.tipo === "cartao");
+  const bancoFiltered = filtered.filter((t) => t.tipo === "banco");
+
+  const dre = computeDRE(dreFiltered);
+  const monthly = monthlySeries(dreFiltered);
+  const expensesCartao = expenseBreakdown(cartaoFiltered);
+  const expensesBanco = expenseBreakdown(bancoFiltered);
 
   const periodLabel = sp.month ? monthLabel(sp.month) : months.length > 0 ? "todo o período" : "—";
 
@@ -64,11 +70,21 @@ export default async function CompanyDashboardPage({
     );
   }
 
+  const sourcesLabel = [
+    settings.include_cartao && "Cartão",
+    settings.include_banco && "Banco",
+  ].filter(Boolean).join(" + ") || "Nenhuma fonte ativa";
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-extrabold">Dashboard DRE</h1>
-        <p className="text-sm text-muted mt-1">Cartão + Extrato Bancário combinados — o resultado real da empresa.</p>
+        <p className="text-sm text-muted mt-1">
+          {sourcesLabel} — o resultado real da empresa.
+          {(!settings.include_cartao || !settings.include_banco) && (
+            <span className="ml-2 text-gold text-xs">(fonte desativada nas Configurações)</span>
+          )}
+        </p>
       </div>
 
       <Suspense>
@@ -81,14 +97,23 @@ export default async function CompanyDashboardPage({
 
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-surface border border-border rounded-2xl p-5">
-          <h3 className="text-sm font-bold mb-2">Despesas por categoria</h3>
-          <ExpensePieChart data={expenses} />
+          <h3 className="text-sm font-bold mb-1">Despesas — Cartão</h3>
+          <p className="text-xs text-muted mb-3">Gastos do cartão de crédito/débito</p>
+          <ExpensePieChart data={expensesCartao} />
         </div>
+        <div className="bg-surface border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-bold mb-1">Despesas — Banco</h3>
+          <p className="text-xs text-muted mb-3">Saídas do extrato bancário</p>
+          <ExpensePieChart data={expensesBanco} />
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-surface border border-border rounded-2xl p-5">
           <h3 className="text-sm font-bold mb-2">Receita vs Despesas por mês</h3>
           <MonthlyBarChart data={monthly} />
         </div>
-        <div className="bg-surface border border-border rounded-2xl p-5 sm:col-span-2">
+        <div className="bg-surface border border-border rounded-2xl p-5">
           <h3 className="text-sm font-bold mb-2">Tendência do resultado</h3>
           <ResultTrendChart data={monthly} />
         </div>

@@ -10,14 +10,18 @@ export default function BulkDeletePanel({
   companyId,
   tipo,
   months,
+  accounts,
 }: {
   companyId: string;
   tipo: "cartao" | "banco";
   months: string[];
+  accounts: string[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1] || "");
+  const [filterAccount, setFilterAccount] = useState("");
+  const [filterDirection, setFilterDirection] = useState<"" | "entrada" | "saida">("");
   const [confirming, setConfirming] = useState<"all" | "month" | "last7" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -25,7 +29,11 @@ export default function BulkDeletePanel({
   function run(mode: "all" | "month" | "last7days", month?: string) {
     setMessage(null);
     startTransition(async () => {
-      const res = await bulkDeleteTransactions(companyId, tipo, mode, month);
+      const res = await bulkDeleteTransactions(
+        companyId, tipo, mode, month,
+        filterAccount || undefined,
+        (filterDirection as "entrada" | "saida") || undefined
+      );
       setMessage(res?.error || res?.success || null);
       setConfirming(null);
       router.refresh();
@@ -33,6 +41,11 @@ export default function BulkDeletePanel({
   }
 
   if (months.length === 0) return null;
+
+  const filterLabel = [
+    filterAccount ? filterAccount : "",
+    filterDirection === "entrada" ? "entradas" : filterDirection === "saida" ? "saídas" : "",
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className="relative">
@@ -44,15 +57,33 @@ export default function BulkDeletePanel({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 bg-surface-2 border border-border rounded-xl p-3 z-10 flex flex-col gap-2 shadow-xl">
+        <div className="absolute right-0 mt-2 w-80 bg-surface-2 border border-border rounded-xl p-3 z-10 flex flex-col gap-2 shadow-xl">
+          <div className="flex flex-col gap-1.5 border border-border rounded-lg p-2">
+            <p className="text-xs font-semibold text-muted">Filtrar antes de apagar</p>
+            <select
+              value={filterAccount}
+              onChange={(e) => { setFilterAccount(e.target.value); setConfirming(null); }}
+              className="bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-gold"
+            >
+              <option value="">Todas as contas</option>
+              {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select
+              value={filterDirection}
+              onChange={(e) => { setFilterDirection(e.target.value as "" | "entrada" | "saida"); setConfirming(null); }}
+              className="bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-gold"
+            >
+              <option value="">Entradas e saídas</option>
+              <option value="entrada">Só entradas</option>
+              <option value="saida">Só saídas</option>
+            </select>
+            {filterLabel && <p className="text-xs text-gold">Aplicar a: {filterLabel}</p>}
+          </div>
+
           <button
-            onClick={() => (confirming === "last7" ? run("last7days") : setConfirming("last7"))}
+            onClick={() => confirming === "last7" ? run("last7days") : setConfirming("last7")}
             disabled={isPending}
-            className={`text-left text-xs rounded-lg px-3 py-2 border transition-colors ${
-              confirming === "last7"
-                ? "border-red text-red bg-red-soft"
-                : "border-border text-muted hover:text-foreground"
-            }`}
+            className={`text-left text-xs rounded-lg px-3 py-2 border transition-colors ${confirming === "last7" ? "border-red text-red bg-red-soft" : "border-border text-muted hover:text-foreground"}`}
           >
             {confirming === "last7" ? "Confirma apagar os últimos 7 dias?" : "Apagar últimos 7 dias"}
           </button>
@@ -60,42 +91,27 @@ export default function BulkDeletePanel({
           <div className="flex flex-col gap-1.5 border border-border rounded-lg p-2">
             <select
               value={selectedMonth}
-              onChange={(e) => {
-                setSelectedMonth(e.target.value);
-                setConfirming(null);
-              }}
+              onChange={(e) => { setSelectedMonth(e.target.value); setConfirming(null); }}
               className="bg-background border border-border rounded-md px-2 py-1.5 text-xs outline-none focus:border-gold"
             >
-              {months.map((m) => (
-                <option key={m} value={m}>
-                  {monthLabel(m)}
-                </option>
-              ))}
+              {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
             <button
-              onClick={() => (confirming === "month" ? run("month", selectedMonth) : setConfirming("month"))}
+              onClick={() => confirming === "month" ? run("month", selectedMonth) : setConfirming("month")}
               disabled={isPending || !selectedMonth}
-              className={`text-left text-xs rounded-lg px-3 py-2 border transition-colors ${
-                confirming === "month"
-                  ? "border-red text-red bg-red-soft"
-                  : "border-border text-muted hover:text-foreground"
-              }`}
+              className={`text-left text-xs rounded-lg px-3 py-2 border transition-colors ${confirming === "month" ? "border-red text-red bg-red-soft" : "border-border text-muted hover:text-foreground"}`}
             >
               {confirming === "month" ? `Confirma apagar ${monthLabel(selectedMonth)}?` : "Apagar esse mês"}
             </button>
           </div>
 
           <button
-            onClick={() => (confirming === "all" ? run("all") : setConfirming("all"))}
+            onClick={() => confirming === "all" ? run("all") : setConfirming("all")}
             disabled={isPending}
-            className={`text-left text-xs rounded-lg px-3 py-2 border flex items-center gap-1.5 transition-colors ${
-              confirming === "all"
-                ? "border-red text-red bg-red-soft"
-                : "border-border text-red/80 hover:text-red"
-            }`}
+            className={`text-left text-xs rounded-lg px-3 py-2 border flex items-center gap-1.5 transition-colors ${confirming === "all" ? "border-red text-red bg-red-soft" : "border-border text-red/80 hover:text-red"}`}
           >
             <AlertTriangle size={12} />
-            {confirming === "all" ? "Tem certeza? Isso apaga tudo!" : "Apagar tudo"}
+            {confirming === "all" ? "Tem certeza? Isso apaga tudo (com os filtros acima)!" : "Apagar tudo"}
           </button>
 
           {isPending && <p className="text-xs text-faint">Apagando...</p>}
