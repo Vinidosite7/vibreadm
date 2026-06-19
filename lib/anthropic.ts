@@ -64,7 +64,7 @@ Regras:
 - Recebimentos de clientes, vendas, repasses de gateway de venda = Receita.
 ${regraCartaoReceita}
 ${regraDuplicidade}${categoriasCustomTexto}
-- Se a transação for ambígua e você não tiver confiança real em nenhuma categoria, use Nao Identificado em vez de forçar uma categoria errada ou chutar "Outras Despesas". É melhor marcar como Nao Identificado do que categorizar errado.
+- Se a transação for ambígua e você não tiver confiança real em nenhuma categoria, use Nao Identificado em vez de forçar uma categoria errada ou chutar "Outras Despesas". É melhor marcar como Nao Identificado do que categorizar errado. MAS isso NUNCA é motivo para deixar a transação de fora — dificuldade em categorizar não justifica omitir. Toda saída de PIX, débito, tarifa ou pagamento real deve aparecer na lista, mesmo que a categoria fique como Nao Identificado.
 - Ignore APENAS linhas que claramente não são transações reais (saldo anterior, saldo do dia, cabeçalho de tabela, linha de total/subtotal). Toda e qualquer movimentação financeira real deve aparecer, mesmo que pareça repetida, pequena ou irrelevante.
 - IMPORTANTE: "conciso" aqui significa só que cada linha de saída deve ser curta e sem comentário extra — isso NUNCA é permissão para resumir, agrupar, selecionar "as mais importantes" ou pular transações para economizar espaço. Se o extrato tem 300 transações, sua resposta deve ter 300 linhas. Não invente dados que não estão no extrato, mas também não omita nenhum que esteja.
 - Se o documento tiver múltiplas páginas, processe TODAS elas — não pare na primeira página nem resuma o restante.
@@ -73,37 +73,72 @@ Extrato:
 `;
 }
 
-function parseOutput(text: string, customCategories: string[] = []): { rows: ExtractedRow[]; skipped: number } {
+function normalizeDate(raw: string): string | null {
+  const s = raw.trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // tolera DD/MM/AAAA por engano do modelo
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return null;
+}
+
+function parseValue(raw: string): number {
+  let s = raw.trim().replace(/^R\$\s*/, "");
+  if (s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  return parseFloat(s);
+}
+
+function splitParts(line: string): [string, string, string, string] | null {
+  const raw = line.split("|").map((p) => p.trim());
+  if (raw.length < 4) return null;
+  if (raw.length === 4) return raw as [string, string, string, string];
+  const date = raw[0];
+  const category = raw[raw.length - 1];
+  const value = raw[raw.length - 2];
+  const description = raw.slice(1, raw.length - 2).join(" ");
+  return [date, description, value, category];
+}
+
+function parseOutput(
+  text: string,
+  customCategories: string[] = []
+): { rows: ExtractedRow[]; skipped: number; skippedSamples: string[] } {
   const lines = text
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
   const rows: ExtractedRow[] = [];
   let skipped = 0;
+  const skippedSamples: string[] = [];
   const allCategories = [...VALID_CATEGORIES, ...customCategories];
   for (const line of lines) {
-    const parts = line.split("|");
-    if (parts.length !== 4) {
+    const parts = splitParts(line);
+    if (!parts) {
       skipped++;
+      if (skippedSamples.length < 15) skippedSamples.push(line.slice(0, 120));
       continue;
     }
-    const [date, desc, valueStr, catRaw] = parts.map((p) => p.trim());
-    const value = parseFloat(valueStr.replace(",", "."));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(value)) {
+    const [dateRaw, desc, valueRaw, catRaw] = parts;
+    const date = normalizeDate(dateRaw);
+    const value = parseValue(valueRaw);
+    if (!date || Number.isNaN(value)) {
       skipped++;
+      if (skippedSamples.length < 15) skippedSamples.push(line.slice(0, 120));
       continue;
     }
     const category =
       allCategories.find((c) => c.toLowerCase() === catRaw.toLowerCase()) || "Nao Identificado";
     rows.push({ date, description: desc.slice(0, 60), amount: value, category });
   }
-  return { rows, skipped };
+  return { rows, skipped, skippedSamples };
 }
 
 async function callClaude(
   content: unknown,
   customCategories: string[] = []
-): Promise<{ rows: ExtractedRow[]; skipped: number; truncated: boolean }> {
+): Promise<{ rows: ExtractedRow[]; skipped: number; truncated: boolean; skippedSamples: string[] }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -119,7 +154,7 @@ async function callClaude(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-sonnet-4-6",
       max_tokens: 16000,
       messages: [{ role: "user", content }],
     }),
@@ -137,8 +172,8 @@ async function callClaude(
     .join("\n");
 
   if (!text.trim()) throw new Error("A IA não retornou nenhum dado. Tente novamente.");
-  const { rows, skipped } = parseOutput(text, customCategories);
-  return { rows, skipped, truncated: data.stop_reason === "max_tokens" };
+  const { rows, skipped, skippedSamples } = parseOutput(text, customCategories);
+  return { rows, skipped, truncated: data.stop_reason === "max_tokens", skippedSamples };
 }
 
 export async function extractFromText(

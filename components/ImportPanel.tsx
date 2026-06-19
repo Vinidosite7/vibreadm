@@ -27,6 +27,8 @@ export default function ImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [skipped, setSkipped] = useState(0);
+  const [skippedSamples, setSkippedSamples] = useState<string[]>([]);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const [previewRows, setPreviewRows] = useState<PreviewRow[] | null>(null);
   const [accountValue, setAccountValue] = useState("");
@@ -40,12 +42,8 @@ export default function ImportPanel({
 
   const totalSizeMB = files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024);
 
-  // Redimensiona e recomprime a foto no navegador antes de enviar. A IA de
-  // visão já reduz a imagem internamente pra ~2000px no lado maior, então
-  // mandar a foto em resolução total da câmera só desperdiça banda — isso
-  // que permite enviar várias fotos juntas sem estourar limite de tamanho.
   function compressImage(file: File, maxDim = 2000, quality = 0.82): Promise<File> {
-    if (!file.type.startsWith("image/")) return Promise.resolve(file); // PDF passa direto
+    if (!file.type.startsWith("image/")) return Promise.resolve(file);
     return new Promise((resolve) => {
       const img = new window.Image();
       const url = URL.createObjectURL(file);
@@ -125,6 +123,7 @@ export default function ImportPanel({
         return;
       }
       setSkipped(res.skipped || 0);
+      setSkippedSamples(res.skippedSamples || []);
       setTruncated(!!res.truncated);
       setPreviewRows(
         (res.rows || []).map((r, i) => ({
@@ -302,7 +301,21 @@ export default function ImportPanel({
           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
             <p className="text-xs text-muted">
               {previewRows.length} transação(ões) encontrada(s)
-              {skipped > 0 ? ` — ${skipped} linha(s) ignorada(s)` : ""}
+              {skipped > 0 ? (
+                <>
+                  {" — "}
+                  {skipped} linha(s) ignorada(s){" "}
+                  {skippedSamples.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSkipped((s) => !s)}
+                      className="underline text-gold hover:text-foreground"
+                    >
+                      {showSkipped ? "ocultar" : "ver"}
+                    </button>
+                  )}
+                </>
+              ) : ""}
               {duplicateCount > 0 ? ` — ${duplicateCount} possível(eis) duplicado(s) já desmarcado(s)` : ""}
             </p>
             <div className="flex items-center gap-2">
@@ -322,6 +335,19 @@ export default function ImportPanel({
               </button>
             </div>
           </div>
+
+          {showSkipped && skippedSamples.length > 0 && (
+            <div className="bg-background border border-border rounded-xl p-3 mb-3 max-h-40 overflow-y-auto">
+              <p className="text-xs text-faint mb-1.5">
+                Linhas que a IA tentou ler mas não bateram com o formato esperado (útil pra diagnóstico):
+              </p>
+              <div className="flex flex-col gap-1">
+                {skippedSamples.map((s, i) => (
+                  <code key={i} className="text-xs text-muted font-mono break-all">{s}</code>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="border border-border rounded-xl overflow-hidden">
             <div className="max-h-80 overflow-y-auto">

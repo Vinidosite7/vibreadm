@@ -20,7 +20,7 @@ function revalidateCompany(companyId: string) {
 }
 
 export type ExtractRow = { date: string; description: string; amount: number; category: string; isDuplicate: boolean };
-export type ExtractResult = { rows?: ExtractRow[]; skipped?: number; truncated?: boolean; error?: string };
+export type ExtractResult = { rows?: ExtractRow[]; skipped?: number; truncated?: boolean; skippedSamples?: string[]; error?: string };
 
 export async function extractStatement(companyId: string, tipo: "cartao" | "banco", formData: FormData): Promise<ExtractResult> {
   try {
@@ -30,7 +30,7 @@ export async function extractStatement(companyId: string, tipo: "cartao" | "banc
     const account = String(formData.get("account") || "Conta sem nome").trim() || "Conta sem nome";
     const text = formData.get("text");
     const allFiles = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
-    let result: { rows: { date: string; description: string; amount: number; category: string }[]; skipped: number; truncated: boolean };
+    let result: { rows: { date: string; description: string; amount: number; category: string }[]; skipped: number; truncated: boolean; skippedSamples: string[] };
     if (allFiles.length > 0) {
       const converted: { base64: string; mediaType: string }[] = [];
       for (const file of allFiles) {
@@ -51,7 +51,7 @@ export async function extractStatement(companyId: string, tipo: "cartao" | "banc
     const { data: existing } = await supabase.from("transactions").select("date, amount").eq("company_id", companyId).eq("tipo", tipo);
     const existingKeys = new Set((existing || []).map((e) => `${e.date}|${Number(e.amount).toFixed(2)}`));
     const rows: ExtractRow[] = result.rows.map((r) => ({ ...r, isDuplicate: existingKeys.has(`${r.date}|${r.amount.toFixed(2)}`) }));
-    return { rows, skipped: result.skipped, truncated: result.truncated };
+    return { rows, skipped: result.skipped, truncated: result.truncated, skippedSamples: result.skippedSamples };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Erro ao processar o extrato." };
   }
@@ -103,8 +103,12 @@ export async function addManualTransaction(companyId: string, tipo: "cartao" | "
 
 export type BulkDeleteState = { error?: string; success?: string } | null;
 export async function bulkDeleteTransactions(
-  companyId: string, tipo: "cartao" | "banco", mode: "all" | "month" | "last7days",
-  month?: string, account?: string, direction?: "entrada" | "saida"
+  companyId: string,
+  tipo: "cartao" | "banco",
+  mode: "all" | "month" | "last7days",
+  month?: string,
+  account?: string,
+  direction?: "entrada" | "saida"
 ): Promise<BulkDeleteState> {
   try {
     const supabase = await assertCompanyOwnership(companyId);
