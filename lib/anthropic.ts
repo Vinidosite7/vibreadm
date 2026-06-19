@@ -45,9 +45,9 @@ function buildPrompt(
       : "";
 
   return `Você é um motor de extração de dados financeiros para um sistema de DRE empresarial brasileiro.
-Extraia TODAS as transações reais do extrato/fatura abaixo (conta: "${accountLabel}", tipo: ${
+Extraia ABSOLUTAMENTE TODAS as transações reais do extrato/fatura abaixo (conta: "${accountLabel}", tipo: ${
     tipo === "cartao" ? "cartão de crédito/débito" : "extrato bancário"
-  }).
+  }), sem exceção e sem pular nenhuma, mesmo que o documento tenha várias páginas ou centenas de linhas.
 Responda APENAS com linhas no formato exato, uma transação por linha, sem cabeçalho, sem markdown, sem texto antes ou depois:
 DATA|DESCRICAO|VALOR|CATEGORIA
 
@@ -65,8 +65,9 @@ Regras:
 ${regraCartaoReceita}
 ${regraDuplicidade}${categoriasCustomTexto}
 - Se a transação for ambígua e você não tiver confiança real em nenhuma categoria, use Nao Identificado em vez de forçar uma categoria errada ou chutar "Outras Despesas". É melhor marcar como Nao Identificado do que categorizar errado.
-- Ignore linhas que não são transações reais (saldo anterior, saldo do dia, cabeçalho, total).
-- Seja extremamente direto e conciso para não estourar o limite de saída. Não invente dados que não estão no extrato.
+- Ignore APENAS linhas que claramente não são transações reais (saldo anterior, saldo do dia, cabeçalho de tabela, linha de total/subtotal). Toda e qualquer movimentação financeira real deve aparecer, mesmo que pareça repetida, pequena ou irrelevante.
+- IMPORTANTE: "conciso" aqui significa só que cada linha de saída deve ser curta e sem comentário extra — isso NUNCA é permissão para resumir, agrupar, selecionar "as mais importantes" ou pular transações para economizar espaço. Se o extrato tem 300 transações, sua resposta deve ter 300 linhas. Não invente dados que não estão no extrato, mas também não omita nenhum que esteja.
+- Se o documento tiver múltiplas páginas, processe TODAS elas — não pare na primeira página nem resuma o restante.
 
 Extrato:
 `;
